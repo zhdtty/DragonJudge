@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  dragonjudge:
+    build: .
+    container_name: dragonjudge
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    command: python dragonjudge.py --fetch
+    restart: unless-stopped
+    networks:
+      - dragonjudge-network
+
+  # 定时任务调度器（可选）
+  scheduler:
+    build: .
+    container_name: dragonjudge-scheduler
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    # 使用 cron 定时运行
+    command: >
+      sh -c "
+        echo '0 15 * * 1-5 cd /app \&\& python dragonjudge.py --fetch' | crontab - \&\&
+        cron -f
+      "
+    restart: unless-stopped
+    networks:
+      - dragonjudge-network
+
+networks:
+  dragonjudge-network:
+    driver: bridge
+
+volumes:
+  data:
+  logs:
