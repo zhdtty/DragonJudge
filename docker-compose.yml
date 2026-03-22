@@ -1,45 +1,73 @@
 version: '3.8'
 
 services:
+  # DragonJudge应用服务
   dragonjudge:
-    build: .
-    container_name: dragonjudge
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./.env:/app/.env:ro
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dragonjudge-app
+    restart: unless-stopped
     environment:
+      - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
+      - MONGODB_URI=mongodb://mongo:27017/dragonjudge
       - LOG_LEVEL=INFO
-    command: python dragonjudge.py --fetch
-    restart: unless-stopped
-    networks:
-      - dragonjudge-network
-
-  # 定时任务调度器（可选）
-  scheduler:
-    build: .
-    container_name: dragonjudge-scheduler
     volumes:
-      - ./data:/app/data
       - ./logs:/app/logs
-      - ./.env:/app/.env:ro
-    environment:
-      - PYTHONUNBUFFERED=1
-    # 使用 cron 定时运行
-    command: >
-      sh -c "
-        echo '0 15 * * 1-5 cd /app \&\& python dragonjudge.py --fetch' | crontab - \&\&
-        cron -f
-      "
-    restart: unless-stopped
+      - ./data:/app/data
+    depends_on:
+      - mongo
     networks:
       - dragonjudge-network
+    command: python dragonjudge.py --mode daily
+
+  # 定时任务调度服务
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dragonjudge-scheduler
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - PYTHONUNBUFFERED=1
+      - MONGODB_URI=mongodb://mongo:27017/dragonjudge
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      - mongo
+    networks:
+      - dragonjudge-network
+    command: python dragonjudge.py --mode scheduler
+
+  # MongoDB数据库
+  mongo:
+    image: mongo:7.0
+    container_name: dragonjudge-mongo
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - MONGO_INITDB_DATABASE=dragonjudge
+    volumes:
+      - mongo-data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    ports:
+      - "27017:27017"
+    networks:
+      - dragonjudge-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  mongo-data:
+    driver: local
 
 networks:
   dragonjudge-network:
     driver: bridge
-
-volumes:
-  data:
-  logs:
